@@ -246,7 +246,7 @@ class RedshiftAutoSchema():
                         return 'DOUBLE PRECISION'
                 except TypeError:
                     return 'DOUBLE PRECISION'
-            except ValueError:
+            except (ValueError, OverflowError):
                 if all(str(value).lower() in ["true", "false", "t", "f", "0", "1"] for value in self.file_df[name].unique()):
                     return 'BOOLEAN'
                 else:
@@ -256,7 +256,7 @@ class RedshiftAutoSchema():
                             return 'DATE'
                         else:
                             return 'TIMESTAMP WITHOUT TIME ZONE'
-                    except ValueError:
+                    except (ValueError, OverflowError):
                         if self.file_df[name].astype(str).map(len).max() <= 256:
                             return 'CHARACTER VARYING(256)'
                         else:
