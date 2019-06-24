@@ -119,7 +119,7 @@ class RedshiftAutoSchema():
             str: Table DDL
         """
         if self.metadata is None:
-            self.generate_table_metadata_from_file()
+            self._generate_table_metadata_from_file()
 
         metadata = self.metadata.copy()
         metadata['index'][1:] = ', ' + metadata['index'][1:].astype(str)
@@ -156,7 +156,7 @@ class RedshiftAutoSchema():
             raise Exception("Conn must be set to a valid Redshift connection.")
 
         if self.metadata is None:
-            self.generate_table_metadata_from_file()
+            self._generate_table_metadata_from_file()
 
         proposed_df = self.metadata.copy()
         deployed_df = pd.read_sql(f"""SELECT "column" AS index, "type" AS deployed_type FROM pg_table_def WHERE schemaname = '{self.schema}' AND tablename = '{self.table}';""", con=self.conn)
