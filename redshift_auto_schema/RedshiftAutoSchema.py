@@ -254,7 +254,7 @@ class RedshiftAutoSchema():
                     else:
                         try:
                             values = pd.to_datetime(self.file_df[name], infer_datetime_format=True)
-                            if (values == values.dt.normalize()):
+                            if ((values == values.dt.normalize()).all()):
                                 return 'DATE'
                             else:
                                 return 'TIMESTAMP WITHOUT TIME ZONE'
