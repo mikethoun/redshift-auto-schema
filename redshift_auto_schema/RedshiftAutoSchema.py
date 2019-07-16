@@ -63,6 +63,20 @@ class RedshiftAutoSchema():
         self.conn = conn
         self.default_group = default_group
         self.metadata = None
+        self.columns = None
+        self.file_df = None
+        self.diff = None
+
+    def get_column_list(self) -> list:
+        """Returns column list based on header of file.
+        """
+        if self.columns is None:
+            if self.file_df is None:
+                self._load_file(self.file, True)
+
+            self.columns = [col for col in self.file_df.columns]
+
+        return self.columns
 
     def check_schema_existence(self) -> bool:
         """Checks Redshift for the existence of a schema.
@@ -122,10 +136,10 @@ class RedshiftAutoSchema():
             self._generate_table_metadata_from_file()
 
         metadata = self.metadata.copy()
-        metadata.loc[metadata.proposed_type == 'NULL FIELD', 'proposed_type'] = 'CHARACTER VARYING(256)'
+        metadata.loc[metadata.proposed_type == 'notype', 'proposed_type'] = 'varchar(256)'
         metadata['index'][1:] = ', ' + metadata['index'][1:].astype(str)
         columns = re.sub(' +', ' ', metadata[['index', 'proposed_type']].to_string(header=False, index=False))
-        export_date = f" , export_date DATE DEFAULT GETDATE()\n" if self.export_date_field else ""
+        export_date = f" , export_date date DEFAULT GETDATE()\n" if self.export_date_field else ""
 
         ddl = f"CREATE TABLE {self.schema}.{self.table} (\n{columns}\n{export_date})\n"
 
@@ -138,6 +152,23 @@ class RedshiftAutoSchema():
             ddl += f"SORTKEY ({self.sort_key})\n"
 
         return ddl
+
+    def generate_column_ddl(self) -> str:
+        """Returns a SQL statement that adds missing column(s) to a table.
+
+        Returns:
+            str: Column DDL
+        """
+        if self.diff is None:
+            self.evaluate_table_ddl_diffs()
+
+        if 'reason' not in self.diff.columns:
+            return None
+        elif not self.diff[self.diff.reason == 'MISSING'].empty:
+            missing = self.diff[['field', 'proposed_type']][self.diff.reason == 'MISSING']
+            return re.sub(' +', ' ', (f'ALTER TABLE {self.schema}.{self.table} ADD COLUMN ' + missing['field'] + ' ' + missing['proposed_type'] + ';').to_string(header=False, index=False))
+        else:
+            return None
 
     def generate_table_permissions(self) -> str:
         """Returns a SQL statement that grants table read access to the default group.
@@ -160,25 +191,30 @@ class RedshiftAutoSchema():
             self._generate_table_metadata_from_file()
 
         proposed_df = self.metadata.copy()
-        deployed_df = pd.read_sql(f"""SELECT "column_name" AS index, "data_type" || CASE WHEN character_maximum_length IS NOT NULL THEN '(' || CAST(character_maximum_length AS VARCHAR) || ')' ELSE '' END AS deployed_type
+        deployed_df = pd.read_sql(f"""SELECT "column_name" AS index, "udt_name" || CASE WHEN character_maximum_length IS NOT NULL THEN '(' || CAST(character_maximum_length AS VARCHAR) || ')' ELSE '' END AS deployed_type
                                       FROM information_schema.columns WHERE table_schema = '{self.schema}' AND table_name = '{self.table}' ORDER BY ordinal_position;""", con=self.conn)
         combined_df = pd.merge(proposed_df, deployed_df, how='outer', on='index')
-        combined_df['reason'] = combined_df.apply(lambda x: 'DATA TYPE MISMATCH' if (self._classify_type(x['proposed_type']) != self._classify_type(x['deployed_type'])) else np.NaN, axis=1)
-        combined_df.loc[combined_df.proposed_type.notnull() & combined_df.deployed_type.isnull(), 'reason'] = 'FIELD IN FILE, NOT IN REDSHIFT'
-        combined_df.loc[combined_df.proposed_type.isnull() & combined_df.deployed_type.notnull(), 'reason'] = 'FIELD IN REDSHIFT, NOT IN FILE'
+        combined_df['reason'] = combined_df.apply(lambda x: 'TYPE MISMATCH' if (self._classify_type(x['proposed_type']) != self._classify_type(x['deployed_type'])) else np.NaN, axis=1)
+        combined_df.loc[combined_df.proposed_type.notnull() & combined_df.deployed_type.isnull(), 'reason'] = 'MISSING'
+        combined_df.loc[combined_df.proposed_type.isnull() & combined_df.deployed_type.notnull(), 'reason'] = 'DEPRECATED'
         combined_df.rename(columns={'index': 'field'}, inplace=True)
-        combined_df = combined_df[combined_df.proposed_type != 'NULL FIELD']
+        combined_df = combined_df[combined_df.proposed_type != 'notype']
         combined_df = combined_df[['field', 'proposed_type', 'deployed_type', 'reason']].copy()
-        return combined_df[combined_df['reason'].notnull()]
+        self.diff = combined_df[combined_df['reason'].notnull()]
+        return self.diff
+
+    def _load_file(self, path: str, low_memory: bool = False) -> None:
+        if 'parquet' in self.file.lower():
+            self.file_df = pd.read_parquet(self.file)
+        else:
+            self.file_df = pd.read_csv(self.file, sep=self.delimiter, quotechar=self.quotechar, encoding=self.encoding, low_memory=low_memory)
 
     def _generate_table_metadata_from_file(self) -> None:
         """Generates metadata based on contents of file.
         """
-        if 'parquet' in self.file.lower():
-            self.file_df = pd.read_parquet(self.file)
-        else:
-            self.file_df = pd.read_csv(self.file, sep=self.delimiter, quotechar=self.quotechar, encoding=self.encoding, low_memory=False)
+        self._load_file(self.file, False)
 
+        self.columns = [col for col in self.file_df.columns]
         metadata = self.file_df.dtypes.to_frame('pandas_type')
         metadata.reset_index(level=0, inplace=True)
         metadata['proposed_type'] = ''
@@ -191,32 +227,32 @@ class RedshiftAutoSchema():
         Returns:
             int: Value for the data type set.
         """
-        datatype = str(datatype).upper().strip()
-        if datatype in ('SMALLINT', 'INT2'):
+        datatype = str(datatype).lower().strip()
+        if datatype in ('smallint', 'int2'):
             return 1
-        elif datatype in ('INTEGER', 'INT', 'INT4'):
+        elif datatype in ('integer', 'int', 'int4'):
             return 2
-        elif datatype in ('BIGINT', 'INT8'):
+        elif datatype in ('bigint', 'int8'):
             return 3
-        elif datatype in ('DECIMAL', 'NUMERIC'):
+        elif datatype in ('decimal', 'numeric'):
             return 4
-        elif datatype in ('REAL', 'FLOAT'):
+        elif datatype in ('real', 'float'):
             return 5
-        elif datatype in ('DOUBLE PRECISION', 'FLOAT8', 'FLOAT'):
+        elif datatype in ('double precision', 'float8', 'float'):
             return 6
-        elif datatype in ('BOOLEAN', 'BOOL'):
+        elif datatype in ('boolean', 'bool'):
             return 7
-        elif datatype in ('CHAR', 'CHARACTER', 'NCHAR', 'BPCHAR'):
+        elif datatype in ('char', 'character', 'nchar', 'bpchar'):
             return 8
-        elif datatype in ('VARCHAR', 'VARCHAR(256)', 'CHARACTER VARYING', 'CHARACTER VARYING(256)', 'NVARCHAR', 'NVARCHAR(256)', 'TEXT'):
+        elif datatype in ('varchar', 'varchar(256)', 'character varying', 'character varying(256)', 'nvarchar', 'nvarchar(256)', 'text'):
             return 9
-        elif datatype in ('VARCHAR(65535)', 'CHARACTER VARYING(65535)', 'NVARCHAR(65535)'):
+        elif datatype in ('varchar(65535)', 'character varying(65535)', 'nvarchar(65535)'):
             return 10
-        elif datatype in ('DATE'):
+        elif datatype in ('date'):
             return 11
-        elif datatype in ('TIMESTAMP', 'TIMESTAMP WITHOUT TIME ZONE'):
+        elif datatype in ('timestamp', 'timestamp without time zone'):
             return 12
-        elif datatype in ('TIMESTAMPTZ', 'TIMESTAMP WITH TIME ZONE'):
+        elif datatype in ('timestamptz', 'timestamp with time zone'):
             return 13
         else:
             return 0
@@ -239,31 +275,31 @@ class RedshiftAutoSchema():
                     try:
                         if np.array_equal(self.file_df[name].notnull().astype(float), self.file_df[name].notnull().astype(int)):
                             if all(value in [0, 1] for value in self.file_df[name].unique()):
-                                return 'BOOLEAN'
+                                return 'bool'
                             elif self.file_df[name].max() <= 2147483647 and self.file_df[name].min() >= -2147483648:
-                                return 'INTEGER'
+                                return 'int4'
                             else:
-                                return 'BIGINT'
+                                return 'int8'
                         else:
-                            return 'DOUBLE PRECISION'
+                            return 'float8'
                     except TypeError:
-                        return 'DOUBLE PRECISION'
+                        return 'float8'
                 except (ValueError, OverflowError):
                     if all(str(value).lower() in ["true", "false", "t", "f", "0", "1"] for value in self.file_df[name].unique()):
-                        return 'BOOLEAN'
+                        return 'bool'
                     else:
                         try:
                             values = pd.to_datetime(self.file_df[name], infer_datetime_format=True)
                             if ((values == values.dt.normalize()).all()):
-                                return 'DATE'
+                                return 'date'
                             else:
-                                return 'TIMESTAMP WITHOUT TIME ZONE'
+                                return 'timestamp'
                         except (ValueError, OverflowError):
                             if self.file_df[name].astype(str).map(len).max() <= 256:
-                                return 'CHARACTER VARYING(256)'
+                                return 'varchar(256)'
                             else:
-                                return 'CHARACTER VARYING(65535)'
+                                return 'varchar(65535)'
             else:
-                return 'NULL FIELD'
+                return 'notype'
         except KeyError:
-            return 'NULL FIELD'
+            return 'notype'
