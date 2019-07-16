@@ -34,11 +34,13 @@ if not new_table.check_table_existence():
 
 |NAME|DESCRIPTION|
 |---|---|
+|**get_column_list**|Returns column list based on header of file.|
 |**check_schema_existence**|Checks Redshift for the existence of a schema.|
+|**check_table_existence**|Checks Redshift for the existence of a table.|
 |**generate_schema_ddl**|Returns a SQL statement that creates a Redshift schema.|
 |**generate_schema_permissions**|Returns a SQL statement that grants schema usage to the default group.|
-|**check_table_existence**|Checks Redshift for the existence of a table.|
 |**generate_table_ddl**|Returns a SQL statement that creates a Redshift table.|
+|**generate_column_ddl**|Returns SQL statement(s) that adds missing column(s) a Redshift table.|
 |**generate_table_permissions**|Returns a SQL statement that grants table read access to the default group.|
 |**evaluate_table_ddl_diffs**|Returns a dataframe containing differences between generated and existing table DDL.|
 
