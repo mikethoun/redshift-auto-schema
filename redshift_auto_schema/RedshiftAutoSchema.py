@@ -89,7 +89,7 @@ class RedshiftAutoSchema():
         """
         if self.conn:
             with self.conn.cursor() as cur:
-                cur.execute(f"SELECT 1 FROM pg_tables WHERE schemaname = '{self.schema}' LIMIT 1;")
+                cur.execute(f"SELECT 1 FROM pg_namespace WHERE nspname = '{self.schema}';")
                 return True if cur.fetchall() else False
         else:
             raise Exception("Conn must be set to a valid Redshift connection.")
