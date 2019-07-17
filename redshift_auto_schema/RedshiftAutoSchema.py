@@ -43,18 +43,22 @@ class RedshiftAutoSchema():
                  file: str,
                  schema: str,
                  table: str,
-                 export_date_field: bool = False,
+                 export_field_name: str = None,
+                 export_field_type: str = None,
+                 primary_key: str = None,
                  dist_key: str = None,
                  sort_key: str = None,
                  delimiter: str = '|',
                  quotechar: str = '"',
                  encoding: str = None,
                  conn: pg.extensions.connection = None,
-                 default_group: str = 'reporting_role') -> None:
+                 default_group: str = 'dbreader') -> None:
         self.file = file
         self.schema = schema
         self.table = table
-        self.export_date_field = export_date_field
+        self.export_field_name = export_field_name
+        self.export_field_type = export_field_type
+        self.primary_key = primary_key
         self.dist_key = dist_key
         self.sort_key = sort_key
         self.delimiter = delimiter
@@ -139,9 +143,15 @@ class RedshiftAutoSchema():
         metadata.loc[metadata.proposed_type == 'notype', 'proposed_type'] = 'varchar(256)'
         metadata['index'][1:] = ', ' + metadata['index'][1:].astype(str)
         columns = re.sub(' +', ' ', metadata[['index', 'proposed_type']].to_string(header=False, index=False))
-        export_date = f" , export_date date DEFAULT GETDATE()\n" if self.export_date_field else ""
+        ddl = f"CREATE TABLE {self.schema}.{self.table} (\n{columns}\n"
 
-        ddl = f"CREATE TABLE {self.schema}.{self.table} (\n{columns}\n{export_date})\n"
+        if self.export_field_name and self.export_field_type:
+            ddl += f" , {self.export_field_name} {self.export_field_type} DEFAULT GETDATE()\n"
+
+        if self.primary_key:
+            ddl += f" , PRIMARY KEY ({self.primary_key})\n"
+
+        ddl += ')\n'
 
         if self.dist_key:
             ddl += f"DISTKEY ({self.dist_key})\n"
@@ -208,6 +218,8 @@ class RedshiftAutoSchema():
             self.file_df = pd.read_parquet(self.file)
         else:
             self.file_df = pd.read_csv(self.file, sep=self.delimiter, quotechar=self.quotechar, encoding=self.encoding, low_memory=low_memory)
+
+        self.file_df.columns = self.file_df.columns.str.replace(".", "_")
 
     def _generate_table_metadata_from_file(self) -> None:
         """Generates metadata based on contents of file.
