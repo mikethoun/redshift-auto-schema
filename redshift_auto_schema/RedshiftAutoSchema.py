@@ -146,7 +146,7 @@ class RedshiftAutoSchema():
         ddl = f"CREATE TABLE {self.schema}.{self.table} (\n{columns}\n"
 
         if self.export_field_name and self.export_field_type:
-            ddl += f" , {self.export_field_name} {self.export_field_type} DEFAULT GETDATE()\n"
+            ddl += f" , {self.export_field_name} {self.export_field_type}\n"
 
         if self.primary_key:
             ddl += f" , PRIMARY KEY ({self.primary_key})\n"
@@ -288,6 +288,8 @@ class RedshiftAutoSchema():
                         if np.array_equal(self.file_df[name].notnull().astype(float), self.file_df[name].notnull().astype(int)):
                             if all(value in [0, 1] for value in self.file_df[name].unique()):
                                 return 'bool'
+                            elif not all(self.file_df[name].astype(str).str.isdigit()):
+                                return 'float8'
                             elif self.file_df[name].max() <= 2147483647 and self.file_df[name].min() >= -2147483648:
                                 return 'int4'
                             else:
@@ -307,7 +309,7 @@ class RedshiftAutoSchema():
                             else:
                                 return 'timestamp'
                         except (ValueError, OverflowError):
-                            if self.file_df[name].astype(str).map(len).max() <= 256:
+                            if self.file_df[name].astype(str).map(len).max() <= 240:
                                 return 'varchar(256)'
                             else:
                                 return 'varchar(65535)'
