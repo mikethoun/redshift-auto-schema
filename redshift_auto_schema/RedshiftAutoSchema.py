@@ -18,6 +18,8 @@ import psycopg2 as pg
 import pandas as pd
 import numpy as np
 import re
+from datetime import datetime
+from dateutil import parser
 
 
 class RedshiftAutoSchema():
@@ -141,7 +143,7 @@ class RedshiftAutoSchema():
 
         metadata = self.metadata.copy()
         metadata.loc[metadata.proposed_type == 'notype', 'proposed_type'] = 'varchar(256)'
-        metadata['index'][1:] = ', ' + metadata['index'][1:].astype(str)
+        metadata['index'][1:] = ', "' + metadata['index'][1:].astype(str) + '"'
         columns = re.sub(' +', ' ', metadata[['index', 'proposed_type']].to_string(header=False, index=False))
         ddl = f"CREATE TABLE {self.schema}.{self.table} (\n{columns}\n"
 
@@ -286,7 +288,7 @@ class RedshiftAutoSchema():
                     self.file_df[name].astype(float)
                     try:
                         if np.array_equal(self.file_df[name].notnull().astype(float), self.file_df[name].notnull().astype(int)):
-                            if all(value in [0, 1] for value in self.file_df[name].unique()):
+                            if all(value in [0, 1] for value in self.file_df[name].unique()) and all(self.file_df[name].astype(str).str.isdigit()):
                                 return 'bool'
                             elif not all(self.file_df[name].astype(str).str.isdigit()):
                                 return 'float8'
@@ -304,7 +306,9 @@ class RedshiftAutoSchema():
                     else:
                         try:
                             values = pd.to_datetime(self.file_df[name], infer_datetime_format=True)
-                            if ((values == values.dt.normalize()).all()):
+                            if not all(parser.parse(value, default=datetime(1900, 1, 1)) == parser.parse(value) for value in self.file_df[name][self.file_df[name].notnull()].unique()):
+                                return 'varchar(256)'
+                            elif ((values == values.dt.normalize()).all()):
                                 return 'date'
                             else:
                                 return 'timestamp'
