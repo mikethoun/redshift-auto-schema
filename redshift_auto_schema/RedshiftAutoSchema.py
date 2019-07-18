@@ -281,18 +281,21 @@ class RedshiftAutoSchema():
             str: Redshift data type
         """
         name = str(metadata[0])
+        column = self.file_df[name]
 
-        try:
-            if not self.file_df[name].isnull().all():
+        if column.isnull().all():
+            return 'notype'
+        else:
+            column = column[column.notnull()]
+
+            if all(str(x).lower() in ["true", "false", "t", "f", "0", "1"] for x in column.unique()):
+                return 'bool'
+            else:
                 try:
-                    self.file_df[name].astype(float)
+                    column.astype(float)
                     try:
-                        if np.array_equal(self.file_df[name].notnull().astype(float), self.file_df[name].notnull().astype(int)):
-                            if all(value in [0, 1] for value in self.file_df[name].unique()) and all(self.file_df[name].astype(str).str.isdigit()):
-                                return 'bool'
-                            elif not all(self.file_df[name].astype(str).str.isdigit()):
-                                return 'float8'
-                            elif self.file_df[name].max() <= 2147483647 and self.file_df[name].min() >= -2147483648:
+                        if np.array_equal(column.astype(float), column.astype(int)) and all(column.astype(str).str.isdigit()):
+                            if column.max() <= 2147483647 and column.min() >= -2147483648:
                                 return 'int4'
                             else:
                                 return 'int8'
@@ -301,23 +304,16 @@ class RedshiftAutoSchema():
                     except TypeError:
                         return 'float8'
                 except (ValueError, OverflowError):
-                    if all(str(value).lower() in ["true", "false", "t", "f", "0", "1"] for value in self.file_df[name].unique()):
-                        return 'bool'
-                    else:
-                        try:
-                            values = pd.to_datetime(self.file_df[name], infer_datetime_format=True)
-                            if not all(parser.parse(value, default=datetime(1900, 1, 1)) == parser.parse(value) for value in self.file_df[name][self.file_df[name].notnull()].unique()):
-                                return 'varchar(256)'
-                            elif ((values == values.dt.normalize()).all()):
-                                return 'date'
-                            else:
-                                return 'timestamp'
-                        except (ValueError, OverflowError):
-                            if self.file_df[name].astype(str).map(len).max() <= 240:
-                                return 'varchar(256)'
-                            else:
-                                return 'varchar(65535)'
-            else:
-                return 'notype'
-        except KeyError:
-            return 'notype'
+                    try:
+                        date_parse = pd.to_datetime(column, infer_datetime_format=True)
+                        if not all(parser.parse(x, default=datetime(1900, 1, 1)) == parser.parse(x) for x in column.unique()):
+                            return 'varchar(256)'
+                        elif all(date_parse == date_parse.dt.normalize()):
+                            return 'date'
+                        else:
+                            return 'timestamp'
+                    except (ValueError, OverflowError):
+                        if column.astype(str).map(len).max() <= 240:
+                            return 'varchar(256)'
+                        else:
+                            return 'varchar(65535)'
