@@ -226,6 +226,8 @@ class RedshiftAutoSchema():
     def _generate_table_metadata_from_file(self) -> None:
         """Generates metadata based on contents of file.
         """
+        pd.set_option("display.max_colwidth", 10000)
+
         self._load_file(self.file, False)
 
         self.columns = [col for col in self.file_df.columns]
