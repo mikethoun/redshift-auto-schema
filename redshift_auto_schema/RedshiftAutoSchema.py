@@ -140,6 +140,8 @@ class RedshiftAutoSchema():
         """
         if self.metadata is None:
             self._generate_table_metadata_from_file()
+            if self.metadata is None:
+                return None
 
         metadata = self.metadata.copy()
         metadata.loc[metadata.proposed_type == 'notype', 'proposed_type'] = 'varchar(256)'
@@ -229,6 +231,10 @@ class RedshiftAutoSchema():
         pd.set_option("display.max_colwidth", 10000)
 
         self._load_file(self.file, False)
+
+        if self.file_df.empty:
+            self.metadata = None
+            return
 
         self.columns = [col for col in self.file_df.columns]
         metadata = self.file_df.dtypes.to_frame('pandas_type')
