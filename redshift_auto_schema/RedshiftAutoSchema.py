@@ -28,9 +28,9 @@ class RedshiftAutoSchema():
     This class provides functions that allow for the automatic generation and validation of table schemas (and basic permissioning) in Redshift.
 
     Attributes:
-        file (str): Path to delimited flat file or parquet file.
         schema (str): Schema of the new Redshift table.
         table (str): Name of the new Redshift table.
+        file (str): Path to delimited flat file or parquet file.
         export_date_field (bool, optional): Flag indicating whether export_date column should be added to new table.
         dist_key (str, optional): Name of column that should be the distribution key. If no column is specified, it will default to DISTSTYLE EVEN.
         sort_key (str, optional): Name of columns that should be the sort key (separated by commas).
@@ -39,12 +39,13 @@ class RedshiftAutoSchema():
         encoding (str, optional): Flat file encoding. Defaults to None.
         conn (pg.extensions.connection, optional): Redshift connection (psycopg2).
         default_group (str, optional): Default group/role for readonly table access. Defaults to 'reporting_role'.
+        file_df (pd.core.frame.DataFrame): Pandas dataframe with column naming using "_" only
     """
 
     def __init__(self,
-                 file: str,
                  schema: str,
                  table: str,
+                 file: str = None,
                  export_field_name: str = None,
                  export_field_type: str = None,
                  primary_key: str = None,
@@ -54,7 +55,9 @@ class RedshiftAutoSchema():
                  quotechar: str = '"',
                  encoding: str = None,
                  conn: pg.extensions.connection = None,
-                 default_group: str = 'dbreader') -> None:
+                 default_group: str = 'dbreader',
+                 file_df: pd.core.frame.DataFrame = None) -> None:
+        assert file or file_df
         self.file = file
         self.schema = schema
         self.table = table
@@ -70,8 +73,8 @@ class RedshiftAutoSchema():
         self.default_group = default_group
         self.metadata = None
         self.columns = None
-        self.file_df = None
         self.diff = None
+        self.file_df = file_df
 
     def get_column_list(self) -> list:
         """Returns column list based on header of file.
@@ -139,7 +142,7 @@ class RedshiftAutoSchema():
             str: Table DDL
         """
         if self.metadata is None:
-            self._generate_table_metadata_from_file()
+            self._generate_table_metadata()
             if self.metadata is None:
                 return None
 
@@ -202,7 +205,7 @@ class RedshiftAutoSchema():
             raise Exception("Conn must be set to a valid Redshift connection.")
 
         if self.metadata is None:
-            self._generate_table_metadata_from_file()
+            self._generate_table_metadata()
 
         proposed_df = self.metadata.copy()
         deployed_df = pd.read_sql(f"""SELECT "column_name" AS index, "udt_name" || CASE WHEN character_maximum_length IS NOT NULL THEN '(' || CAST(character_maximum_length AS VARCHAR) || ')' ELSE '' END AS deployed_type
@@ -225,12 +228,13 @@ class RedshiftAutoSchema():
 
         self.file_df.columns = self.file_df.columns.str.replace(".", "_")
 
-    def _generate_table_metadata_from_file(self) -> None:
+    def _generate_table_metadata(self) -> None:
         """Generates metadata based on contents of file.
         """
         pd.set_option("display.max_colwidth", 10000)
 
-        self._load_file(self.file, False)
+        if not self.file_df:
+            self._load_file(self.file, False)
 
         if self.file_df.empty:
             self.metadata = None
