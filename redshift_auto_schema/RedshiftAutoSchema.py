@@ -318,7 +318,7 @@ class RedshiftAutoSchema():
                 except (TypeError, ValueError, OverflowError):
                     try:
                         date_parse = pd.to_datetime(column, infer_datetime_format=True)
-                        if not all(parser.parse(x, default=datetime(1900, 1, 1)) == parser.parse(x) for x in column.unique()):
+                        if not all(parser.parse(str(x), default=datetime(1900, 1, 1)) == parser.parse(str(x)) for x in column.unique()):
                             return 'varchar(256)'
                         elif all(date_parse == date_parse.dt.normalize()):
                             return 'date'
