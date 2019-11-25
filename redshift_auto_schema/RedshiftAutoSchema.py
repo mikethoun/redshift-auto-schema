@@ -315,7 +315,7 @@ class RedshiftAutoSchema():
                             return 'float8'
                     except TypeError:
                         return 'float8'
-                except (ValueError, OverflowError):
+                except (TypeError, ValueError, OverflowError):
                     try:
                         date_parse = pd.to_datetime(column, infer_datetime_format=True)
                         if not all(parser.parse(x, default=datetime(1900, 1, 1)) == parser.parse(x) for x in column.unique()):
@@ -324,7 +324,7 @@ class RedshiftAutoSchema():
                             return 'date'
                         else:
                             return 'timestamp'
-                    except (ValueError, OverflowError):
+                    except (TypeError, ValueError, OverflowError):
                         if column.astype(str).map(len).max() <= 240:
                             return 'varchar(256)'
                         else:
