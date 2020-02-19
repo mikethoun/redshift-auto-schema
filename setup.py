@@ -4,7 +4,7 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(name='redshift-auto-schema',
-                 version='v0.1.12',
+                 version='v0.1.13',
                  author='Mike Thoun',
                  author_email='mikethoun@gmail.com',
                  description='Auto-generate Redshift schemas',
@@ -16,6 +16,6 @@ setuptools.setup(name='redshift-auto-schema',
                  classifiers=['Programming Language :: Python :: 3',
                               'License :: OSI Approved :: Apache Software License',
                               ],
-                 install_requires=['pandas',
+                 install_requires=['pandas>=1.0.0',
                                    'numpy',
                                    ])
