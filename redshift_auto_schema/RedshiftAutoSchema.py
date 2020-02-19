@@ -20,6 +20,7 @@ import numpy as np
 import re
 from datetime import datetime
 from dateutil import parser
+from typing import List
 
 
 class RedshiftAutoSchema():
@@ -40,6 +41,7 @@ class RedshiftAutoSchema():
         conn (pg.extensions.connection, optional): Redshift connection (psycopg2).
         default_group (str, optional): Default group/role for readonly table access. Defaults to 'reporting_role'.
         file_df (pd.core.frame.DataFrame): Pandas dataframe with column naming using "_" only
+        column (List[str]): Optional list of column names
     """
 
     def __init__(self,
@@ -56,7 +58,8 @@ class RedshiftAutoSchema():
                  encoding: str = None,
                  conn: pg.extensions.connection = None,
                  default_group: str = 'dbreader',
-                 file_df: pd.core.frame.DataFrame = None) -> None:
+                 file_df: pd.core.frame.DataFrame = None,
+                 columns: List[str] = None) -> None:
         assert file or not file_df.empty
         self.file = file
         self.schema = schema
@@ -72,7 +75,7 @@ class RedshiftAutoSchema():
         self.conn = conn
         self.default_group = default_group
         self.metadata = None
-        self.columns = None
+        self.columns = columns
         self.diff = None
         self.file_df = file_df
 
@@ -99,7 +102,7 @@ class RedshiftAutoSchema():
         if self.conn:
             with self.conn.cursor() as cur:
                 cur.execute(f"SELECT 1 FROM pg_namespace WHERE nspname = '{self.schema}';")
-                return True if cur.fetchall() else False
+                return True if cur.rowcount != 0 else False
         else:
             raise Exception("Conn must be set to a valid Redshift connection.")
 
@@ -115,7 +118,7 @@ class RedshiftAutoSchema():
         if self.conn:
             with self.conn.cursor() as cur:
                 cur.execute(f"SELECT 1 FROM pg_tables WHERE schemaname = '{self.schema}' AND tablename = '{self.table}' UNION SELECT 1 FROM pg_views WHERE schemaname = '{self.schema}' AND viewname = '{self.table}' LIMIT 1;")
-                return True if cur.fetchall() else False
+                return True if cur.rowcount != 0 else False
         else:
             raise Exception("Conn must be set to a valid Redshift connection.")
 
@@ -148,6 +151,7 @@ class RedshiftAutoSchema():
 
         metadata = self.metadata.copy()
         metadata.loc[metadata.proposed_type == 'notype', 'proposed_type'] = 'varchar(256)'
+        metadata['index'][0] = '"' + str(metadata['index'][0]) + '"'
         metadata['index'][1:] = ', "' + metadata['index'][1:].astype(str) + '"'
         columns = re.sub(' +', ' ', metadata[['index', 'proposed_type']].to_string(header=False, index=False))
         ddl = f"CREATE TABLE {self.schema}.{self.table} (\n{columns}\n"
@@ -240,7 +244,11 @@ class RedshiftAutoSchema():
             self.metadata = None
             return
 
-        self.columns = [col for col in self.file_df.columns]
+        if self.columns is None:
+            self.columns = [col for col in self.file_df.columns]
+        else:
+            self.file_df.columns = self.columns
+
         metadata = self.file_df.dtypes.to_frame('pandas_type')
         metadata.reset_index(level=0, inplace=True)
         metadata['proposed_type'] = ''
@@ -306,7 +314,7 @@ class RedshiftAutoSchema():
                 try:
                     column.astype(float)
                     try:
-                        if np.array_equal(column.astype(float), column.astype(int)) and all(column.astype(str).str.isdigit()):
+                        if np.array_equal(column.fillna(True).astype(float), column.fillna(True).astype(int)):
                             if column.max() <= 2147483647 and column.min() >= -2147483648:
                                 return 'int4'
                             else:
