@@ -26,8 +26,9 @@ new_table = RedshiftAutoSchema(file='sample_file.parquet',
 if not new_table.check_table_existence():
     ddl = new_table.generate_table_ddl()
 
-    with redshift_conn.cursor() as redshift_cursor:
-        redshift_cursor.execute(ddl)
+    with redshift_conn as conn:
+    	with conn.cursor() as cur:
+        	cur.execute(ddl)
 ```
 
 ## Methods
