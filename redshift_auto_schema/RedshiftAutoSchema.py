@@ -252,7 +252,7 @@ class RedshiftAutoSchema():
         metadata = self.file_df.dtypes.to_frame('pandas_type')
         metadata.reset_index(level=0, inplace=True)
         metadata['proposed_type'] = ''
-        metadata['proposed_type'] = metadata.apply(lambda row: self._evaluate_type(row), axis=1)
+        metadata['proposed_type'] = metadata.apply(lambda col: self._evaluate_type(col, identifier=True) if str(col[0]).endswith('_id') else self._evaluate_type(col), axis=1)
         self.metadata = metadata
 
     def _classify_type(self, datatype: str) -> int:
@@ -291,7 +291,7 @@ class RedshiftAutoSchema():
         else:
             return 0
 
-    def _evaluate_type(self, metadata: pd.core.series.Series) -> str:
+    def _evaluate_type(self, metadata: pd.core.series.Series, identifier: bool = False) -> str:
         """Takes table column metadata as input and infers a Redshift data type from the data.
 
         Args:
@@ -308,19 +308,19 @@ class RedshiftAutoSchema():
         else:
             column = column[column.notnull()]
 
-            if all(str(x).lower() in ["true", "false", "t", "f", "0", "1"] for x in column.unique()):
+            if all(str(x).lower() in ["true", "false", "t", "f", "0", "1"] for x in column.unique()) and identifier is False:
                 return 'bool'
             else:
                 try:
                     column.astype(float)
                     try:
-                        if np.array_equal(column.fillna(True).astype(float), column.fillna(True).astype(int)):
+                        if any(column.astype(str).str.contains('.')):
+                            return 'float8'
+                        else:
                             if column.max() <= 2147483647 and column.min() >= -2147483648:
                                 return 'int4'
                             else:
                                 return 'int8'
-                        else:
-                            return 'float8'
                     except TypeError:
                         return 'float8'
                 except (TypeError, ValueError, OverflowError):
