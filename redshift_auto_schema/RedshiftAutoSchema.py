@@ -314,13 +314,13 @@ class RedshiftAutoSchema():
                 try:
                     column.astype(float)
                     try:
-                        if any(column.astype(str).str.contains('.', regex=False)):
-                            return 'float8'
-                        else:
+                        if np.array_equal(column.fillna(True).astype(float), column.fillna(True).astype(int)):
                             if column.max() <= 2147483647 and column.min() >= -2147483648:
                                 return 'int4'
                             else:
                                 return 'int8'
+                        else:
+                            return 'float8'
                     except TypeError:
                         return 'float8'
                 except (TypeError, ValueError, OverflowError):
