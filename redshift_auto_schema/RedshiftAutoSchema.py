@@ -314,7 +314,7 @@ class RedshiftAutoSchema():
                 try:
                     column.astype(float)
                     try:
-                        if any(column.astype(str).str.contains('.')):
+                        if any(column.astype(str).str.contains('.', regex=False)):
                             return 'float8'
                         else:
                             if column.max() <= 2147483647 and column.min() >= -2147483648:

@@ -4,7 +4,7 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(name='redshift-auto-schema',
-                 version='v0.1.14',
+                 version='v0.1.15',
                  author='Mike Thoun',
                  author_email='mikethoun@gmail.com',
                  description='Auto-generate Redshift schemas',
