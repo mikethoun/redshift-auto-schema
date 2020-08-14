@@ -18,4 +18,5 @@ setuptools.setup(name='redshift-auto-schema',
                               ],
                  install_requires=['pandas>=1.0.0',
                                    'numpy',
+                                   'psycopg2>=2.8.5'
                                    ])
